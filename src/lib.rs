@@ -13,6 +13,8 @@ pub mod activity;
 /// Type-safe Temporal client wrapper and typed workflow handles.
 #[cfg(feature = "client")]
 pub mod client;
+/// Convenient re-exports for common imports.
+pub mod prelude;
 /// Core `Workflow` / `Activity` traits and worker registration adapters.
 pub mod traits;
 /// High-level worker connection and runtime lifecycle utilities.
