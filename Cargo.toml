@@ -1,0 +1,34 @@
+[package]
+name = "temporal"
+version = "0.1.0"
+edition = "2024"
+autobins = false
+
+[features]
+default = []
+worker = [
+  "dep:anyhow",
+  "dep:async-trait",
+  "dep:futures",
+  "dep:temporalio-client",
+  "dep:temporalio-common",
+  "dep:temporalio-sdk",
+  "dep:temporalio-sdk-core",
+]
+client = [
+  "dep:anyhow",
+  "dep:temporalio-client",
+  "dep:temporalio-common",
+  "dep:uuid",
+]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+anyhow = { version = "1.0.101", optional = true }
+async-trait = { version = "0.1.89", optional = true }
+futures = { version = "0.3.31", optional = true }
+temporalio-sdk = { git = "https://github.com/temporalio/sdk-core", optional = true }
+temporalio-sdk-core = { git = "https://github.com/temporalio/sdk-core", optional = true }
+temporalio-client = { git = "https://github.com/temporalio/sdk-core", optional = true }
+temporalio-common = { git = "https://github.com/temporalio/sdk-core", optional = true }
+uuid = { version = "1.20.0", features = ["v4"], optional = true }
