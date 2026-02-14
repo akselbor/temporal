@@ -29,6 +29,8 @@ pub struct WorkerOptions {
     pub max_concurrent_activities: usize,
     /// Build identifier used for worker versioning metadata.
     pub build_id: String,
+    /// Temporal client identity used by worker RPCs.
+    pub client_identity: String,
 }
 
 impl WorkerOptions {
@@ -40,12 +42,15 @@ impl WorkerOptions {
     /// - max concurrent activities: `16`
     /// - build id: `<crate-name>-dev`
     pub fn new(temporal_address: impl Into<String>) -> Self {
+        let build_id = default_build_id();
+        let client_identity = default_client_identity(&build_id);
         Self {
             temporal_address: temporal_address.into(),
             namespace: DEFAULT_NAMESPACE.to_owned(),
             task_queue: DEFAULT_TASK_QUEUE.to_owned(),
             max_concurrent_activities: DEFAULT_MAX_CONCURRENT_ACTIVITIES,
-            build_id: default_build_id(),
+            build_id,
+            client_identity,
         }
     }
 
@@ -59,6 +64,7 @@ impl WorkerOptions {
     /// - `TEMPORAL_TASK_QUEUE` (default: `default-task-queue`)
     /// - `TEMPORAL_MAX_CONCURRENT_ACTIVITIES` (default: `16`)
     /// - `TEMPORAL_BUILD_ID` (default: `<crate-name>-dev`)
+    /// - `TEMPORAL_CLIENT_IDENTITY` (default: `<build-id>@<hostname>:<pid>`)
     pub fn from_env() -> Result<Self> {
         let temporal_address =
             std::env::var("TEMPORAL_ADDRESS").context("missing TEMPORAL_ADDRESS")?;
@@ -76,6 +82,8 @@ impl WorkerOptions {
             .transpose()?
             .unwrap_or(DEFAULT_MAX_CONCURRENT_ACTIVITIES);
         let build_id = std::env::var("TEMPORAL_BUILD_ID").unwrap_or_else(|_| default_build_id());
+        let client_identity = std::env::var("TEMPORAL_CLIENT_IDENTITY")
+            .unwrap_or_else(|_| default_client_identity(&build_id));
 
         Ok(Self {
             temporal_address,
@@ -83,6 +91,7 @@ impl WorkerOptions {
             task_queue,
             max_concurrent_activities,
             build_id,
+            client_identity,
         })
     }
 
@@ -109,11 +118,26 @@ impl WorkerOptions {
         self.build_id = build_id.into();
         self
     }
+
+    /// Sets the client identity used by worker RPCs.
+    pub fn with_client_identity(mut self, client_identity: impl Into<String>) -> Self {
+        self.client_identity = client_identity.into();
+        self
+    }
 }
 
 /// Computes the default build id used when none is configured.
 fn default_build_id() -> String {
     format!("{}-dev", env!("CARGO_PKG_NAME"))
+}
+
+/// Computes the default client identity used when none is configured.
+fn default_client_identity(build_id: &str) -> String {
+    let hostname = std::env::var("HOSTNAME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "unknown-host".to_owned());
+    format!("{build_id}@{hostname}:{}", std::process::id())
 }
 
 /// High-level Temporal worker abstraction for this crate.
@@ -151,7 +175,8 @@ impl Worker {
         let temporal_url = Url::from_str(&options.temporal_address)
             .with_context(|| format!("invalid temporal address: {}", options.temporal_address))?;
 
-        let client_options = sdk_client_options(temporal_url).build();
+        let mut client_options = sdk_client_options(temporal_url).build();
+        client_options.identity = options.client_identity.clone();
         let client = client_options
             .connect_no_namespace(runtime.telemetry().get_temporal_metric_meter())
             .await
