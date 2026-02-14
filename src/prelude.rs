@@ -31,7 +31,7 @@ pub use crate::worker::{Worker, WorkerOptions};
 
 /// Worker-side Temporal SDK result/error aliases used in trait signatures.
 #[cfg(feature = "worker")]
-pub use temporalio_sdk::{ActivityError, WorkflowResult};
+pub use temporalio_sdk::{ActivityError, WfExitValue, WorkflowResult};
 
 /// Common supporting types for constructing [`crate::activity::ActivityOptions`].
 #[cfg(feature = "worker")]
