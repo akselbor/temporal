@@ -49,7 +49,11 @@ impl WorkflowContext {
             .inner
             .activity(options.to_temporal::<T>(input))
             .await
-            .unwrap_ok_payload();
+            .success_payload_or_error()
+            .map_err(ActivityError::from)?
+            .ok_or_else(|| {
+                ActivityError::NonRetryable("activity completed without payload".into())
+            })?;
         Ok(T::Output::from_json_payload(&payload)?)
     }
 
