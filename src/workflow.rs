@@ -3,6 +3,7 @@
 use futures::future::try_join_all;
 use temporalio_common::protos::coresdk::FromJsonPayloadExt;
 use temporalio_sdk::{ActivityError, WfContext};
+use anyhow::anyhow;
 
 use crate::{activity::ActivityOptions, traits::Activity};
 
@@ -52,7 +53,7 @@ impl WorkflowContext {
             .success_payload_or_error()
             .map_err(ActivityError::from)?
             .ok_or_else(|| {
-                ActivityError::NonRetryable("activity completed without payload".into())
+                ActivityError::NonRetryable(anyhow!("activity completed without payload"))
             })?;
         Ok(T::Output::from_json_payload(&payload)?)
     }
