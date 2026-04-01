@@ -13,6 +13,7 @@ use crate::{
 /// Context passed to workflow implementations.
 ///
 /// Exposes type-safe helpers for invoking crate-defined activities.
+#[derive(Clone)]
 pub struct WorkflowContext {
     pub(crate) inner: WfContext,
 }
