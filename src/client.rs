@@ -9,15 +9,20 @@ use temporalio_client::{
     WorkflowHandle as TemporalWorkflowHandle, WorkflowOptions,
 };
 use temporalio_common::protos::{
-    coresdk::{AsJsonPayloadExt, FromJsonPayloadExt},
-    temporal::api::common::v1::Payload,
+    coresdk::{AsJsonPayloadExt, FromJsonPayloadExt, IntoPayloadsExt},
+    temporal::api::{
+        common::v1::Payload,
+        enums::v1::UpdateWorkflowExecutionLifecycleStage,
+        failure::v1::Failure,
+        update::v1::{WaitPolicy, outcome::Value as UpdateOutcomeValue},
+    },
 };
 use temporalio_common::telemetry::metrics::TemporalMeter;
 use uuid::Uuid;
 
 #[cfg(feature = "worker")]
 use crate::activity::ActivityOptions;
-use crate::traits::{Activity, Workflow};
+use crate::traits::{Activity, Workflow, WorkflowUpdate};
 
 /// Options for starting a workflow execution.
 #[derive(Debug, Clone)]
@@ -61,6 +66,45 @@ impl StartWorkflowOptions {
     pub fn with_workflow_options(mut self, workflow_options: WorkflowOptions) -> Self {
         self.workflow_options = workflow_options;
         self
+    }
+}
+
+/// Options for executing a workflow update.
+#[derive(Debug, Clone)]
+pub struct UpdateWorkflowOptions {
+    /// Temporal wait policy controlling when the update response is returned.
+    pub wait_policy: WaitPolicy,
+}
+
+impl Default for UpdateWorkflowOptions {
+    fn default() -> Self {
+        Self {
+            wait_policy: WaitPolicy {
+                lifecycle_stage: UpdateWorkflowExecutionLifecycleStage::Completed as i32,
+            },
+        }
+    }
+}
+
+/// Typed result of a workflow update execution.
+#[derive(Debug, Clone)]
+pub enum WorkflowUpdateResult<T> {
+    Succeeded(T),
+    Failed(Failure),
+}
+
+impl<T> WorkflowUpdateResult<T> {
+    /// Returns `true` when the update completed successfully.
+    pub fn is_success(&self) -> bool {
+        matches!(self, Self::Succeeded(_))
+    }
+
+    /// Converts the update result into a standard result.
+    pub fn into_result(self) -> std::result::Result<T, Failure> {
+        match self {
+            Self::Succeeded(value) => Ok(value),
+            Self::Failed(failure) => Err(failure),
+        }
     }
 }
 
@@ -256,6 +300,60 @@ where
     }
 }
 
+impl<C, W> TypedWorkflowHandle<C, W>
+where
+    C: WorkflowClientTrait + temporalio_client::WorkflowService + Clone,
+    W: Workflow,
+{
+    /// Executes a typed workflow update and waits for it to complete.
+    pub async fn execute_update<U>(
+        &self,
+        input: U::Input,
+    ) -> Result<WorkflowUpdateResult<U::Output>>
+    where
+        U: WorkflowUpdate<Workflow = W>,
+    {
+        self.execute_update_with::<U>(UpdateWorkflowOptions::default(), input)
+            .await
+    }
+
+    /// Executes a typed workflow update with explicit Temporal update options.
+    pub async fn execute_update_with<U>(
+        &self,
+        options: UpdateWorkflowOptions,
+        input: U::Input,
+    ) -> Result<WorkflowUpdateResult<U::Output>>
+    where
+        U: WorkflowUpdate<Workflow = W>,
+    {
+        let input_payload = input
+            .as_json_payload()
+            .context("failed to serialize workflow update input to payload")?;
+
+        let info = self.info();
+        let response = self
+            .inner
+            .client()
+            .update_workflow_execution(
+                info.workflow_id.clone(),
+                info.run_id.clone().unwrap_or_default(),
+                U::NAME.to_owned(),
+                options.wait_policy,
+                vec![input_payload].into_payloads(),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to execute workflow update `{}` for workflow `{}`",
+                    U::NAME,
+                    W::TYPE
+                )
+            })?;
+
+        decode_workflow_update_result::<U>(response)
+    }
+}
+
 /// Converts an untyped workflow execution result into a typed one.
 fn decode_workflow_result<W>(
     raw: WorkflowExecutionResult<Vec<Payload>>,
@@ -294,6 +392,52 @@ where
         _ => bail!(
             "workflow `{}` completed with {} output payloads; expected exactly one",
             W::TYPE,
+            payloads.len()
+        ),
+    }
+}
+
+/// Converts an untyped workflow update execution response into a typed one.
+fn decode_workflow_update_result<U>(
+    response: temporalio_common::protos::temporal::api::workflowservice::v1::UpdateWorkflowExecutionResponse,
+) -> Result<WorkflowUpdateResult<U::Output>>
+where
+    U: WorkflowUpdate,
+{
+    let outcome = response
+        .outcome
+        .context("workflow update response did not include an outcome")?;
+
+    match outcome
+        .value
+        .context("workflow update outcome did not include a value")?
+    {
+        UpdateOutcomeValue::Success(payloads) => Ok(WorkflowUpdateResult::Succeeded(
+            decode_workflow_update_output::<U>(payloads.payloads)?,
+        )),
+        UpdateOutcomeValue::Failure(failure) => Ok(WorkflowUpdateResult::Failed(failure)),
+    }
+}
+
+/// Deserializes a workflow update success payload list into `U::Output`.
+fn decode_workflow_update_output<U>(payloads: Vec<Payload>) -> Result<U::Output>
+where
+    U: WorkflowUpdate,
+{
+    match payloads.as_slice() {
+        [payload] => U::Output::from_json_payload(payload).with_context(|| {
+            format!(
+                "failed to deserialize output for workflow update `{}`",
+                U::NAME
+            )
+        }),
+        [] => bail!(
+            "workflow update `{}` completed without an output payload",
+            U::NAME
+        ),
+        _ => bail!(
+            "workflow update `{}` completed with {} output payloads; expected exactly one",
+            U::NAME,
             payloads.len()
         ),
     }

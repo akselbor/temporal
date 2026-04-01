@@ -62,6 +62,20 @@ pub trait Workflow {
     ) -> WorkflowResult<Self::Output>;
 }
 
+/// Defines a type-safe Temporal workflow update.
+///
+/// Implement this trait for each workflow update accepted by a workflow.
+pub trait WorkflowUpdate {
+    /// The workflow this update targets.
+    type Workflow: Workflow;
+    /// The input type for this update.
+    type Input: Serialize + DeserializeOwned + Send + 'static;
+    /// The output type for this update.
+    type Output: Serialize + DeserializeOwned + Send + 'static;
+    /// The Temporal update name.
+    const NAME: &str;
+}
+
 /// Defines a type-safe Temporal activity.
 ///
 /// Implement this trait for your activity type.

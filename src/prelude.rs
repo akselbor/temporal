@@ -7,7 +7,7 @@
 //! feature flags.
 
 /// Core type-safe workflow/activity traits (always available).
-pub use crate::traits::{Activity, Workflow};
+pub use crate::traits::{Activity, Workflow, WorkflowUpdate};
 
 /// Worker-side async trait macro used by workflow/activity implementations.
 #[cfg(feature = "worker")]
@@ -32,6 +32,9 @@ pub use crate::worker::{Worker, WorkerOptions};
 /// Worker-side Temporal SDK result/error aliases used in trait signatures.
 #[cfg(feature = "worker")]
 pub use temporalio_sdk::{ActivityError, WfExitValue, WorkflowResult};
+/// Worker-side Temporal SDK update context types used in typed workflow updates.
+#[cfg(feature = "worker")]
+pub use temporalio_sdk::{UpdateContext, UpdateInfo};
 
 /// Common supporting types for constructing [`crate::activity::ActivityOptions`].
 #[cfg(feature = "worker")]
@@ -45,7 +48,10 @@ pub use temporalio_common::protos::temporal::api::common::v1::RetryPolicy;
 
 /// Client-side typed wrapper APIs.
 #[cfg(feature = "client")]
-pub use crate::client::{Client, ConnectedClient, StartWorkflowOptions, TypedWorkflowHandle};
+pub use crate::client::{
+    Client, ConnectedClient, StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions,
+    WorkflowUpdateResult,
+};
 
 /// Client-side Temporal workflow start/result options and result types.
 #[cfg(feature = "client")]
