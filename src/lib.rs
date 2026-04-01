@@ -3,9 +3,11 @@
 //! This crate provides:
 //! - Trait-based workflow/activity definitions (`[crate::traits::Workflow]`,
 //!   `[crate::traits::Activity]`).
+//! - Trait-based typed workflow updates (`[crate::traits::WorkflowUpdate]`).
 //! - A typed workflow runtime context for invoking activities.
 //! - A high-level worker abstraction for registration and execution.
-//! - A typed client wrapper for starting workflows and decoding workflow results.
+//! - A typed client wrapper for starting workflows, executing workflow updates,
+//!   and decoding workflow results.
 
 /// Activity context and activity execution options.
 #[cfg(feature = "worker")]

@@ -1,11 +1,14 @@
 //! Workflow-side runtime helpers.
 
+use anyhow::anyhow;
 use futures::future::try_join_all;
 use temporalio_common::protos::coresdk::FromJsonPayloadExt;
-use temporalio_sdk::{ActivityError, WfContext};
-use anyhow::anyhow;
+use temporalio_sdk::{ActivityError, IntoUpdateHandlerFunc, IntoUpdateValidatorFunc, WfContext};
 
-use crate::{activity::ActivityOptions, traits::Activity};
+use crate::{
+    activity::ActivityOptions,
+    traits::{Activity, WorkflowUpdate},
+};
 
 /// Context passed to workflow implementations.
 ///
@@ -71,5 +74,16 @@ impl WorkflowContext {
             .map(|i| self.execute_activity_with::<T>(options.clone(), i));
         let results = try_join_all(futures).await?;
         Ok(results)
+    }
+
+    /// Registers a typed workflow update handler.
+    pub fn register_update<U>(
+        &self,
+        validator: impl IntoUpdateValidatorFunc<U::Input>,
+        handler: impl IntoUpdateHandlerFunc<U::Input, U::Output>,
+    ) where
+        U: WorkflowUpdate,
+    {
+        self.inner.update_handler(U::NAME, validator, handler);
     }
 }
