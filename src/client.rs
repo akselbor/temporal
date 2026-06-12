@@ -9,6 +9,9 @@ use temporalio_client::{
     SignalWithStartOptions as TemporalSignalWithStartOptions, WfClientExt, WorkflowClientTrait,
     WorkflowExecutionResult, WorkflowHandle as TemporalWorkflowHandle, WorkflowOptions,
 };
+pub use temporalio_common::protos::temporal::api::enums::v1::{
+    WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
+};
 use temporalio_common::protos::{
     coresdk::{AsJsonPayloadExt, FromJsonPayloadExt, IntoPayloadsExt},
     temporal::api::{
@@ -60,6 +63,29 @@ impl StartWorkflowOptions {
     /// Sets the request id used for workflow start idempotency.
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
         self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// Sets the policy for reusing a workflow id from a previously closed workflow.
+    pub fn with_workflow_id_reuse_policy(mut self, policy: WorkflowIdReusePolicy) -> Self {
+        self.workflow_options.id_reuse_policy = policy;
+        self
+    }
+
+    /// Sets the policy for resolving conflicts with a running workflow of the same id.
+    pub fn with_workflow_id_conflict_policy(mut self, policy: WorkflowIdConflictPolicy) -> Self {
+        self.workflow_options.id_conflict_policy = policy;
+        self
+    }
+
+    /// Sets both workflow id reuse and running-workflow conflict policies.
+    pub fn with_workflow_id_policies(
+        mut self,
+        reuse_policy: WorkflowIdReusePolicy,
+        conflict_policy: WorkflowIdConflictPolicy,
+    ) -> Self {
+        self.workflow_options.id_reuse_policy = reuse_policy;
+        self.workflow_options.id_conflict_policy = conflict_policy;
         self
     }
 
@@ -120,6 +146,29 @@ impl SignalWithStartWorkflowOptions {
     /// Sets the request id used for signal-with-start idempotency.
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
         self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// Sets the policy for reusing a workflow id from a previously closed workflow.
+    pub fn with_workflow_id_reuse_policy(mut self, policy: WorkflowIdReusePolicy) -> Self {
+        self.workflow_options.id_reuse_policy = policy;
+        self
+    }
+
+    /// Sets the policy for resolving conflicts with a running workflow of the same id.
+    pub fn with_workflow_id_conflict_policy(mut self, policy: WorkflowIdConflictPolicy) -> Self {
+        self.workflow_options.id_conflict_policy = policy;
+        self
+    }
+
+    /// Sets both workflow id reuse and running-workflow conflict policies.
+    pub fn with_workflow_id_policies(
+        mut self,
+        reuse_policy: WorkflowIdReusePolicy,
+        conflict_policy: WorkflowIdConflictPolicy,
+    ) -> Self {
+        self.workflow_options.id_reuse_policy = reuse_policy;
+        self.workflow_options.id_conflict_policy = conflict_policy;
         self
     }
 
@@ -634,6 +683,84 @@ mod tests {
         assert_eq!(options.task_queue, "queue");
         assert_eq!(options.workflow_id, "workflow-001");
         assert_eq!(options.request_id.as_deref(), Some("request-001"));
+    }
+
+    #[test]
+    fn start_workflow_options_sets_workflow_id_reuse_policy() {
+        let options = StartWorkflowOptions::new("queue")
+            .with_workflow_id_reuse_policy(WorkflowIdReusePolicy::AllowDuplicate);
+
+        assert_eq!(
+            options.workflow_options.id_reuse_policy,
+            WorkflowIdReusePolicy::AllowDuplicate
+        );
+    }
+
+    #[test]
+    fn start_workflow_options_sets_workflow_id_conflict_policy() {
+        let options = StartWorkflowOptions::new("queue")
+            .with_workflow_id_conflict_policy(WorkflowIdConflictPolicy::UseExisting);
+
+        assert_eq!(
+            options.workflow_options.id_conflict_policy,
+            WorkflowIdConflictPolicy::UseExisting
+        );
+    }
+
+    #[test]
+    fn start_workflow_options_sets_workflow_id_policies() {
+        let options = StartWorkflowOptions::new("queue").with_workflow_id_policies(
+            WorkflowIdReusePolicy::AllowDuplicate,
+            WorkflowIdConflictPolicy::UseExisting,
+        );
+
+        assert_eq!(
+            options.workflow_options.id_reuse_policy,
+            WorkflowIdReusePolicy::AllowDuplicate
+        );
+        assert_eq!(
+            options.workflow_options.id_conflict_policy,
+            WorkflowIdConflictPolicy::UseExisting
+        );
+    }
+
+    #[test]
+    fn signal_with_start_workflow_options_sets_workflow_id_reuse_policy() {
+        let options = SignalWithStartWorkflowOptions::new("queue")
+            .with_workflow_id_reuse_policy(WorkflowIdReusePolicy::AllowDuplicate);
+
+        assert_eq!(
+            options.workflow_options.id_reuse_policy,
+            WorkflowIdReusePolicy::AllowDuplicate
+        );
+    }
+
+    #[test]
+    fn signal_with_start_workflow_options_sets_workflow_id_conflict_policy() {
+        let options = SignalWithStartWorkflowOptions::new("queue")
+            .with_workflow_id_conflict_policy(WorkflowIdConflictPolicy::UseExisting);
+
+        assert_eq!(
+            options.workflow_options.id_conflict_policy,
+            WorkflowIdConflictPolicy::UseExisting
+        );
+    }
+
+    #[test]
+    fn signal_with_start_workflow_options_sets_workflow_id_policies() {
+        let options = SignalWithStartWorkflowOptions::new("queue").with_workflow_id_policies(
+            WorkflowIdReusePolicy::AllowDuplicate,
+            WorkflowIdConflictPolicy::UseExisting,
+        );
+
+        assert_eq!(
+            options.workflow_options.id_reuse_policy,
+            WorkflowIdReusePolicy::AllowDuplicate
+        );
+        assert_eq!(
+            options.workflow_options.id_conflict_policy,
+            WorkflowIdConflictPolicy::UseExisting
+        );
     }
 
     #[test]
