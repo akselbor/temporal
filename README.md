@@ -125,6 +125,33 @@ let handle = client
     .await?;
 ```
 
+Workflow id reuse policies apply when a previous workflow with the same id has
+closed. Workflow id conflict policies apply when a workflow with the same id is
+already running. Signal-with-start remains one Temporal RPC; a successful RPC
+means Temporal accepted the signal-with-start request, not that workflow code has
+already processed the signal.
+
+```rust
+let options = SignalWithStartWorkflowOptions::new("default-task-queue")
+    .with_workflow_id("greet-workflow-run-001")
+    .with_workflow_id_policies(
+        WorkflowIdReusePolicy::AllowDuplicate,
+        WorkflowIdConflictPolicy::UseExisting,
+    );
+
+let handle = client
+    .signal_with_start_workflow::<RenameSignal>(
+        options,
+        GreetWorkflowInput {
+            name: "Initial".to_string(),
+        },
+        RenameInput {
+            name: "Temporal".to_string(),
+        },
+    )
+    .await?;
+```
+
 ## Timers
 
 With the `worker` feature enabled, workflows can create durable Temporal timers

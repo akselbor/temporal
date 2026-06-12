@@ -52,7 +52,8 @@ pub use temporalio_common::protos::temporal::api::common::v1::RetryPolicy;
 #[cfg(feature = "client")]
 pub use crate::client::{
     Client, ConnectedClient, SignalWithStartWorkflowOptions, SignalWorkflowOptions,
-    StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions, WorkflowUpdateResult,
+    StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions, WorkflowIdConflictPolicy,
+    WorkflowIdReusePolicy, WorkflowUpdateResult,
 };
 
 /// Client-side Temporal workflow start/result options and result types.
