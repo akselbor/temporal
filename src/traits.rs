@@ -76,6 +76,18 @@ pub trait WorkflowUpdate {
     const NAME: &str;
 }
 
+/// Defines a type-safe Temporal workflow signal.
+///
+/// Implement this trait for each workflow signal accepted by a workflow.
+pub trait WorkflowSignal {
+    /// The workflow this signal targets.
+    type Workflow: Workflow;
+    /// The input type for this signal.
+    type Input: Serialize + DeserializeOwned + Send + 'static;
+    /// The Temporal signal name.
+    const NAME: &str;
+}
+
 /// Defines a type-safe Temporal activity.
 ///
 /// Implement this trait for your activity type.

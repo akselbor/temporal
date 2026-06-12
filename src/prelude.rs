@@ -7,7 +7,7 @@
 //! feature flags.
 
 /// Core type-safe workflow/activity traits (always available).
-pub use crate::traits::{Activity, Workflow, WorkflowUpdate};
+pub use crate::traits::{Activity, Workflow, WorkflowSignal, WorkflowUpdate};
 
 /// Worker-side async trait macro used by workflow/activity implementations.
 #[cfg(feature = "worker")]
@@ -19,7 +19,7 @@ pub use crate::activity::{ActivityContext, ActivityOptions};
 
 /// Worker-side workflow runtime context.
 #[cfg(feature = "worker")]
-pub use crate::workflow::WorkflowContext;
+pub use crate::workflow::{WorkflowContext, WorkflowSignalStream};
 
 /// Worker-side registration helpers.
 #[cfg(feature = "worker")]
@@ -49,8 +49,8 @@ pub use temporalio_common::protos::temporal::api::common::v1::RetryPolicy;
 /// Client-side typed wrapper APIs.
 #[cfg(feature = "client")]
 pub use crate::client::{
-    Client, ConnectedClient, StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions,
-    WorkflowUpdateResult,
+    Client, ConnectedClient, SignalWithStartWorkflowOptions, SignalWorkflowOptions,
+    StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions, WorkflowUpdateResult,
 };
 
 /// Client-side Temporal workflow start/result options and result types.
