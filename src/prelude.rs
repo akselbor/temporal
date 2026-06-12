@@ -19,7 +19,9 @@ pub use crate::activity::{ActivityContext, ActivityOptions};
 
 /// Worker-side workflow runtime context.
 #[cfg(feature = "worker")]
-pub use crate::workflow::{WorkflowContext, WorkflowSignalStream};
+pub use crate::workflow::{
+    TimerOptions, TimerResult, WorkflowContext, WorkflowSignalStream, WorkflowTimer,
+};
 
 /// Worker-side registration helpers.
 #[cfg(feature = "worker")]

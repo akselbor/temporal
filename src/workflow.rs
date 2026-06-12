@@ -1,16 +1,19 @@
 //! Workflow-side runtime helpers.
 
 use std::{
+    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context as TaskContext, Poll},
+    time::Duration,
 };
 
 use anyhow::anyhow;
 use futures::{Stream, future::try_join_all, task::noop_waker};
 use temporalio_common::protos::coresdk::{FromJsonPayloadExt, PayloadDeserializeErr};
 use temporalio_sdk::{
-    ActivityError, IntoUpdateHandlerFunc, IntoUpdateValidatorFunc, SignalData, WfContext,
+    ActivityError, CancellableFuture, IntoUpdateHandlerFunc, IntoUpdateValidatorFunc, SignalData,
+    TimerOptions as TemporalTimerOptions, TimerResult as TemporalTimerResult, WfContext,
 };
 
 use crate::{
@@ -27,6 +30,16 @@ pub struct WorkflowContext {
 }
 
 impl WorkflowContext {
+    /// Creates a durable workflow timer.
+    ///
+    /// The returned future resolves when the timer fires or is cancelled. Timers
+    /// are persisted by Temporal and do not occupy a worker thread while waiting.
+    pub fn timer(&self, options: impl Into<TimerOptions>) -> WorkflowTimer<'_> {
+        WorkflowTimer {
+            inner: Box::pin(self.inner.timer(options.into().to_temporal())),
+        }
+    }
+
     /// Executes one activity using `T::default_options()`.
     ///
     /// Returns the typed activity output or a Temporal activity error.
@@ -102,6 +115,74 @@ impl WorkflowContext {
         S: WorkflowSignal,
     {
         WorkflowSignalStream::new(self.inner.make_signal_channel(S::NAME))
+    }
+}
+
+/// Options used when creating a durable workflow timer.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct TimerOptions {
+    /// Duration to wait before the timer fires.
+    pub duration: Duration,
+    /// Optional single-line summary shown in Temporal UI/CLI metadata.
+    pub summary: Option<String>,
+}
+
+impl TimerOptions {
+    /// Converts this crate's timer options into Temporal SDK options.
+    pub fn to_temporal(self) -> TemporalTimerOptions {
+        TemporalTimerOptions {
+            duration: self.duration,
+            summary: self.summary,
+        }
+    }
+}
+
+impl From<Duration> for TimerOptions {
+    fn from(duration: Duration) -> Self {
+        Self {
+            duration,
+            ..Default::default()
+        }
+    }
+}
+
+/// Result of awaiting a workflow timer.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TimerResult {
+    /// The timer elapsed and fired.
+    Fired,
+    /// The timer was cancelled before firing.
+    Cancelled,
+}
+
+impl From<TemporalTimerResult> for TimerResult {
+    fn from(result: TemporalTimerResult) -> Self {
+        match result {
+            TemporalTimerResult::Fired => Self::Fired,
+            TemporalTimerResult::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+/// Future returned by [`WorkflowContext::timer`].
+pub struct WorkflowTimer<'a> {
+    inner: Pin<Box<dyn CancellableFuture<TemporalTimerResult> + Send + 'a>>,
+}
+
+impl<'a> WorkflowTimer<'a> {
+    /// Requests cancellation for this timer.
+    ///
+    /// Awaiting the timer after cancellation resolves to [`TimerResult::Cancelled`].
+    pub fn cancel(&self, ctx: &WorkflowContext) {
+        self.inner.as_ref().get_ref().cancel(&ctx.inner);
+    }
+}
+
+impl<'a> Future for WorkflowTimer<'a> {
+    type Output = TimerResult;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
+        self.inner.as_mut().poll(cx).map(TimerResult::from)
     }
 }
 
@@ -220,6 +301,42 @@ mod tests {
         type Workflow = TestWorkflow;
         type Input = TestSignalInput;
         const NAME: &str = "test-signal";
+    }
+
+    #[test]
+    fn timer_options_from_duration_sets_duration() {
+        let duration = Duration::from_secs(30);
+
+        let options = TimerOptions::from(duration);
+
+        assert_eq!(options.duration, duration);
+        assert_eq!(options.summary, None);
+    }
+
+    #[test]
+    fn timer_options_to_temporal_preserves_fields() {
+        let duration = Duration::from_secs(30);
+        let options = TimerOptions {
+            duration,
+            summary: Some("release hold".to_string()),
+        };
+
+        let temporal = options.to_temporal();
+
+        assert_eq!(temporal.duration, duration);
+        assert_eq!(temporal.summary.as_deref(), Some("release hold"));
+    }
+
+    #[test]
+    fn timer_result_maps_from_temporal_result() {
+        assert_eq!(
+            TimerResult::from(temporalio_sdk::TimerResult::Fired),
+            TimerResult::Fired
+        );
+        assert_eq!(
+            TimerResult::from(temporalio_sdk::TimerResult::Cancelled),
+            TimerResult::Cancelled
+        );
     }
 
     #[test]
