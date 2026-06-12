@@ -3,15 +3,16 @@
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 use temporalio_client::{
     Client as TemporalNamespacedClient, ClientInitError, GetWorkflowResultOptions, RetryClient,
-    WfClientExt, WorkflowClientTrait, WorkflowExecutionResult,
-    WorkflowHandle as TemporalWorkflowHandle, WorkflowOptions,
+    SignalWithStartOptions as TemporalSignalWithStartOptions, WfClientExt, WorkflowClientTrait,
+    WorkflowExecutionResult, WorkflowHandle as TemporalWorkflowHandle, WorkflowOptions,
 };
 use temporalio_common::protos::{
     coresdk::{AsJsonPayloadExt, FromJsonPayloadExt, IntoPayloadsExt},
     temporal::api::{
-        common::v1::Payload,
+        common::v1::{Payload, Payloads},
         enums::v1::UpdateWorkflowExecutionLifecycleStage,
         failure::v1::Failure,
         update::v1::{WaitPolicy, outcome::Value as UpdateOutcomeValue},
@@ -22,7 +23,7 @@ use uuid::Uuid;
 
 #[cfg(feature = "worker")]
 use crate::activity::ActivityOptions;
-use crate::traits::{Activity, Workflow, WorkflowUpdate};
+use crate::traits::{Activity, Workflow, WorkflowSignal, WorkflowUpdate};
 
 /// Options for starting a workflow execution.
 #[derive(Debug, Clone)]
@@ -63,6 +64,66 @@ impl StartWorkflowOptions {
     }
 
     /// Replaces Temporal workflow options used at start time.
+    pub fn with_workflow_options(mut self, workflow_options: WorkflowOptions) -> Self {
+        self.workflow_options = workflow_options;
+        self
+    }
+}
+
+/// Options for sending a workflow signal.
+#[derive(Debug, Clone, Default)]
+pub struct SignalWorkflowOptions {
+    /// Optional request id for idempotent signal semantics.
+    pub request_id: Option<String>,
+}
+
+impl SignalWorkflowOptions {
+    /// Sets the request id used for signal idempotency.
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+}
+
+/// Options for atomically signaling or starting a workflow execution.
+#[derive(Debug, Clone)]
+pub struct SignalWithStartWorkflowOptions {
+    /// Target task queue to schedule the workflow execution on when started.
+    pub task_queue: String,
+    /// Workflow id to signal or start.
+    pub workflow_id: String,
+    /// Optional request id for idempotent signal-with-start semantics.
+    pub request_id: Option<String>,
+    /// Additional Temporal workflow start options used when the workflow is started.
+    pub workflow_options: WorkflowOptions,
+}
+
+impl SignalWithStartWorkflowOptions {
+    /// Creates signal-with-start options with default [`WorkflowOptions`].
+    ///
+    /// A random workflow id is generated as UUID v4 hex.
+    pub fn new(task_queue: impl Into<String>) -> Self {
+        Self {
+            task_queue: task_queue.into(),
+            workflow_id: Uuid::new_v4().simple().to_string(),
+            request_id: None,
+            workflow_options: WorkflowOptions::default(),
+        }
+    }
+
+    /// Sets the workflow id.
+    pub fn with_workflow_id(mut self, workflow_id: impl Into<String>) -> Self {
+        self.workflow_id = workflow_id.into();
+        self
+    }
+
+    /// Sets the request id used for signal-with-start idempotency.
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// Replaces Temporal workflow options used when starting the workflow.
     pub fn with_workflow_options(mut self, workflow_options: WorkflowOptions) -> Self {
         self.workflow_options = workflow_options;
         self
@@ -235,6 +296,82 @@ where
         let handle = self.inner.get_untyped_workflow_handle(workflow_id, run_id);
         TypedWorkflowHandle::new(handle)
     }
+
+    /// Atomically sends a typed signal to a workflow or starts it if it is not running.
+    ///
+    /// This maps to Temporal's signal-with-start RPC. It does not perform a
+    /// separate start call followed by a signal call.
+    pub async fn signal_with_start_workflow<S>(
+        &self,
+        options: SignalWithStartWorkflowOptions,
+        workflow_input: <S::Workflow as Workflow>::Input,
+        signal_input: S::Input,
+    ) -> Result<TypedWorkflowHandle<C, S::Workflow>>
+    where
+        S: WorkflowSignal,
+    {
+        let SignalWithStartWorkflowOptions {
+            task_queue,
+            workflow_id,
+            request_id,
+            workflow_options,
+        } = options;
+
+        let workflow_input = one_payloads(encode_json_payload(&workflow_input, || {
+            format!(
+                "failed to serialize input for signal-with-start workflow `{}`",
+                S::Workflow::TYPE
+            )
+        })?);
+        let signal_input = one_payloads(encode_json_payload(&signal_input, || {
+            format!(
+                "failed to serialize input for workflow signal `{}`",
+                S::NAME
+            )
+        })?);
+
+        let response = self
+            .inner
+            .signal_with_start_workflow_execution(
+                TemporalSignalWithStartOptions {
+                    input: workflow_input,
+                    task_queue,
+                    workflow_id: workflow_id.clone(),
+                    workflow_type: S::Workflow::TYPE.to_owned(),
+                    request_id,
+                    signal_name: S::NAME.to_owned(),
+                    signal_input,
+                    signal_header: None,
+                },
+                workflow_options,
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to signal-with-start workflow `{}` with signal `{}`",
+                    S::Workflow::TYPE,
+                    S::NAME
+                )
+            })?;
+
+        Ok(self.workflow_handle::<S::Workflow>(workflow_id, response.run_id))
+    }
+
+    /// Atomically sends a typed signal to a workflow id or starts it on a task queue.
+    pub async fn signal_with_start_workflow_on_queue<S>(
+        &self,
+        task_queue: impl Into<String>,
+        workflow_id: impl Into<String>,
+        workflow_input: <S::Workflow as Workflow>::Input,
+        signal_input: S::Input,
+    ) -> Result<TypedWorkflowHandle<C, S::Workflow>>
+    where
+        S: WorkflowSignal,
+    {
+        let options = SignalWithStartWorkflowOptions::new(task_queue).with_workflow_id(workflow_id);
+        self.signal_with_start_workflow::<S>(options, workflow_input, signal_input)
+            .await
+    }
 }
 
 /// Typed workflow handle tied to a `Workflow` implementation.
@@ -352,6 +489,67 @@ where
 
         decode_workflow_update_result::<U>(response)
     }
+
+    /// Sends a typed signal to this workflow execution using default signal options.
+    pub async fn signal<S>(&self, input: S::Input) -> Result<()>
+    where
+        S: WorkflowSignal<Workflow = W>,
+    {
+        self.signal_with::<S>(SignalWorkflowOptions::default(), input)
+            .await
+    }
+
+    /// Sends a typed signal to this workflow execution.
+    pub async fn signal_with<S>(
+        &self,
+        options: SignalWorkflowOptions,
+        input: S::Input,
+    ) -> Result<()>
+    where
+        S: WorkflowSignal<Workflow = W>,
+    {
+        let input_payload = encode_json_payload(&input, || {
+            format!(
+                "failed to serialize input for workflow signal `{}`",
+                S::NAME
+            )
+        })?;
+
+        let info = self.info();
+        self.inner
+            .client()
+            .signal_workflow_execution(
+                info.workflow_id.clone(),
+                info.run_id.clone().unwrap_or_default(),
+                S::NAME.to_owned(),
+                one_payloads(input_payload),
+                options.request_id,
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to signal workflow `{}` with signal `{}`",
+                    W::TYPE,
+                    S::NAME
+                )
+            })?;
+
+        Ok(())
+    }
+}
+
+/// Serializes a value into a JSON Temporal payload.
+fn encode_json_payload<T, C>(value: &T, context: C) -> Result<Payload>
+where
+    T: Serialize,
+    C: FnOnce() -> String,
+{
+    value.as_json_payload().with_context(context)
+}
+
+/// Converts a single payload into Temporal's optional payload collection shape.
+fn one_payloads(payload: Payload) -> Option<Payloads> {
+    vec![payload].into_payloads()
 }
 
 /// Converts an untyped workflow execution result into a typed one.
@@ -375,6 +573,91 @@ where
         }
         WorkflowExecutionResult::TimedOut => Ok(WorkflowExecutionResult::TimedOut),
         WorkflowExecutionResult::ContinuedAsNew => Ok(WorkflowExecutionResult::ContinuedAsNew),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TestWorkflowInput {
+        value: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TestSignalInput {
+        value: String,
+    }
+
+    struct TestWorkflow;
+
+    #[cfg_attr(feature = "worker", async_trait::async_trait)]
+    impl Workflow for TestWorkflow {
+        type Input = TestWorkflowInput;
+        type Output = ();
+        const TYPE: &str = "test-workflow";
+
+        #[cfg(feature = "worker")]
+        async fn execute(
+            &self,
+            _ctx: crate::workflow::WorkflowContext,
+            _input: Self::Input,
+        ) -> temporalio_sdk::WorkflowResult<Self::Output> {
+            Ok(temporalio_sdk::WfExitValue::Normal(()))
+        }
+    }
+
+    struct TestSignal;
+
+    impl WorkflowSignal for TestSignal {
+        type Workflow = TestWorkflow;
+        type Input = TestSignalInput;
+        const NAME: &str = "test-signal";
+    }
+
+    #[test]
+    fn signal_workflow_options_sets_request_id() {
+        let options = SignalWorkflowOptions::default().with_request_id("request-001");
+
+        assert_eq!(options.request_id.as_deref(), Some("request-001"));
+    }
+
+    #[test]
+    fn signal_with_start_workflow_options_set_fields() {
+        let options = SignalWithStartWorkflowOptions::new("queue")
+            .with_workflow_id("workflow-001")
+            .with_request_id("request-001");
+
+        assert_eq!(options.task_queue, "queue");
+        assert_eq!(options.workflow_id, "workflow-001");
+        assert_eq!(options.request_id.as_deref(), Some("request-001"));
+    }
+
+    #[test]
+    fn one_payloads_wraps_single_json_payload() {
+        let payload = encode_json_payload(
+            &TestSignalInput {
+                value: "hello".to_string(),
+            },
+            || "failed".to_string(),
+        )
+        .unwrap();
+
+        let payloads = one_payloads(payload).unwrap();
+
+        assert_eq!(payloads.payloads.len(), 1);
+    }
+
+    #[test]
+    fn typed_signal_trait_binds_to_workflow() {
+        assert_eq!(<TestSignal as WorkflowSignal>::NAME, "test-signal");
+        assert_eq!(
+            <TestSignal as WorkflowSignal>::Workflow::TYPE,
+            "test-workflow"
+        );
     }
 }
 

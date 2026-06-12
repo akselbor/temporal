@@ -5,9 +5,10 @@ Type-safe Temporal helpers for defining workflows and activities, running worker
 ## What this crate gives you
 
 - `Workflow` and `Activity` traits with typed input/output.
+- `WorkflowSignal` and `WorkflowUpdate` traits for typed workflow messages.
 - `WorkflowContext` helpers for typed activity calls from workflows.
 - A high-level `Worker` abstraction for connecting and registering handlers.
-- A typed `client::Client` wrapper for starting workflows and decoding results.
+- A typed `client::Client` wrapper for starting, signaling, updating, and decoding workflows.
 
 ## Feature flags
 
@@ -23,6 +24,105 @@ Build examples:
 - traits only: `cargo check --no-default-features`
 - client only: `cargo check --no-default-features --features client`
 - worker only: `cargo check --no-default-features --features worker`
+
+## Typed signals
+
+Define each workflow signal as a `WorkflowSignal` type. The signal type binds the
+signal name and input payload to the workflow it targets.
+
+```rust
+use serde::{Deserialize, Serialize};
+use temporal::traits::{Workflow, WorkflowSignal};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GreetWorkflowInput {
+    name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RenameInput {
+    name: String,
+}
+
+struct GreetWorkflow;
+
+impl Workflow for GreetWorkflow {
+    type Input = GreetWorkflowInput;
+    type Output = String;
+    const TYPE: &str = "greet-workflow";
+}
+
+struct RenameSignal;
+
+impl WorkflowSignal for RenameSignal {
+    type Workflow = GreetWorkflow;
+    type Input = RenameInput;
+    const NAME: &str = "rename";
+}
+```
+
+With the `worker` feature enabled, workflows can subscribe to typed signal
+streams from `WorkflowContext`.
+
+```rust
+use futures::StreamExt;
+use temporal::prelude::*;
+
+#[async_trait]
+impl Workflow for GreetWorkflow {
+    type Input = GreetWorkflowInput;
+    type Output = String;
+    const TYPE: &str = "greet-workflow";
+
+    async fn execute(
+        &self,
+        ctx: WorkflowContext,
+        input: Self::Input,
+    ) -> WorkflowResult<Self::Output> {
+        let mut name = input.name;
+        let mut renames = ctx.signal_channel::<RenameSignal>();
+
+        if let Some(rename) = renames.next().await {
+            name = rename?.name;
+        }
+
+        Ok(WfExitValue::Normal(format!("Hello, {name}!")))
+    }
+}
+```
+
+`WorkflowSignalStream<S>` yields `Result<S::Input, PayloadDeserializeErr>`.
+Each signal is expected to contain exactly one JSON payload. Empty, multiple, or
+non-JSON payloads are returned as decode errors.
+
+With the `client` feature enabled, typed handles can send typed signals.
+
+```rust
+handle
+    .signal::<RenameSignal>(RenameInput {
+        name: "Temporal".to_string(),
+    })
+    .await?;
+```
+
+The client also supports Temporal signal-with-start through one RPC. If a
+workflow with the given id is already running, it is signaled. Otherwise, it is
+started and receives the signal atomically.
+
+```rust
+let handle = client
+    .signal_with_start_workflow_on_queue::<RenameSignal>(
+        "default-task-queue",
+        "greet-workflow-run-001",
+        GreetWorkflowInput {
+            name: "Initial".to_string(),
+        },
+        RenameInput {
+            name: "Temporal".to_string(),
+        },
+    )
+    .await?;
+```
 
 ## Minimal example
 
@@ -40,7 +140,7 @@ use temporal::activity::ActivityContext;
 use temporal::traits::{Activity, Workflow};
 use temporal::workflow::WorkflowContext;
 use temporal::{Worker, WorkerOptions};
-use temporalio_sdk::{ActivityError, WorkflowResult};
+use temporalio_sdk::{ActivityError, WfExitValue, WorkflowResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GreetWorkflowInput {
@@ -78,7 +178,7 @@ impl Workflow for GreetWorkflow {
         input: Self::Input,
     ) -> WorkflowResult<Self::Output> {
         let result = ctx.execute_activity::<GreetActivity>(input.name).await?;
-        Ok(result)
+        Ok(WfExitValue::Normal(result))
     }
 }
 
