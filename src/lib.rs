@@ -7,6 +7,7 @@
 //! - Trait-based typed workflow signals (`[crate::traits::WorkflowSignal]`).
 //! - A typed workflow runtime context for invoking activities and receiving
 //!   workflow signals.
+//! - Durable workflow timers through `[crate::workflow::WorkflowContext]`.
 //! - A high-level worker abstraction for registration and execution.
 //! - A typed client wrapper for starting workflows, signaling workflows,
 //!   executing workflow updates, and decoding workflow results.

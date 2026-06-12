@@ -7,6 +7,7 @@ Type-safe Temporal helpers for defining workflows and activities, running worker
 - `Workflow` and `Activity` traits with typed input/output.
 - `WorkflowSignal` and `WorkflowUpdate` traits for typed workflow messages.
 - `WorkflowContext` helpers for typed activity calls from workflows.
+- Durable workflow timers with cancellable timer futures.
 - A high-level `Worker` abstraction for connecting and registering handlers.
 - A typed `client::Client` wrapper for starting, signaling, updating, and decoding workflows.
 
@@ -122,6 +123,53 @@ let handle = client
         },
     )
     .await?;
+```
+
+## Timers
+
+With the `worker` feature enabled, workflows can create durable Temporal timers
+from `WorkflowContext`. A timer resolves when it fires or when it is cancelled.
+
+```rust
+use std::time::Duration;
+use temporal::prelude::*;
+
+struct ReminderWorkflow;
+
+#[async_trait]
+impl Workflow for ReminderWorkflow {
+    type Input = ();
+    type Output = ();
+    const TYPE: &str = "reminder-workflow";
+
+    async fn execute(
+        &self,
+        ctx: WorkflowContext,
+        _input: Self::Input,
+    ) -> WorkflowResult<Self::Output> {
+        let result = ctx
+            .timer(TimerOptions {
+                duration: Duration::from_secs(60),
+                summary: Some("send reminder".to_string()),
+            })
+            .await;
+
+        if matches!(result, TimerResult::Fired) {
+            // Continue workflow logic.
+        }
+
+        Ok(WfExitValue::Normal(()))
+    }
+}
+```
+
+Timer futures can be cancelled without exposing the underlying Temporal SDK
+context.
+
+```rust
+let timer = ctx.timer(Duration::from_secs(300));
+timer.cancel(&ctx);
+assert_eq!(timer.await, TimerResult::Cancelled);
 ```
 
 ## Minimal example
