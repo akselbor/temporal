@@ -17,8 +17,47 @@ use crate::traits::Activity;
 /// This wraps Temporal's internal activity context type and can be expanded with
 /// additional convenience helpers over time.
 pub struct ActivityContext {
-    #[allow(unused)]
     pub(crate) inner: ActContext,
+}
+
+impl ActivityContext {
+    /// The type of the workflow that scheduled this activity.
+    pub fn workflow_type(&self) -> &str {
+        &self.inner.get_info().workflow_type
+    }
+
+    /// The identifier of the workflow that scheduled this activity.
+    pub fn workflow_id(&self) -> Option<&str> {
+        self.inner
+            .get_info()
+            .workflow_execution
+            .as_ref()
+            .map(|execution| execution.workflow_id.as_str())
+    }
+
+    /// The run identifier of the workflow that scheduled this activity.
+    pub fn run_id(&self) -> Option<&str> {
+        self.inner
+            .get_info()
+            .workflow_execution
+            .as_ref()
+            .map(|execution| execution.run_id.as_str())
+    }
+
+    /// The activity type registered with Temporal.
+    pub fn activity_type(&self) -> &str {
+        &self.inner.get_info().activity_type
+    }
+
+    /// The identifier assigned to this activity invocation.
+    pub fn activity_id(&self) -> &str {
+        &self.inner.get_info().activity_id
+    }
+
+    /// The current activity attempt, starting at one.
+    pub fn attempt(&self) -> u32 {
+        self.inner.get_info().attempt
+    }
 }
 
 /// Options used when scheduling an activity from a workflow.
