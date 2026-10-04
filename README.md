@@ -36,6 +36,8 @@ Keep existing wire names, JSON contracts, activity ordering, timers, and retry p
 
 ## Validation
 
+Building the upstream SDK requires `protoc` (on Debian/Ubuntu, install `protobuf-compiler`).
+
 ```sh
 cargo check --no-default-features
 cargo check --all-targets --features client
