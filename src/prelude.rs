@@ -1,68 +1,21 @@
-//! Convenient imports for common `temporal` usage.
-//!
-//! Import with:
-//! `use temporal::prelude::*;`
-//!
-//! Re-exports are feature-gated to match this crate's `worker` and `client`
-//! feature flags.
+//! Convenient imports for native SDK contracts, clients, and workers.
 
-/// Core type-safe workflow/activity traits (always available).
-pub use crate::traits::{Activity, Workflow, WorkflowSignal, WorkflowUpdate};
-
-/// Worker-side async trait macro used by workflow/activity implementations.
 #[cfg(feature = "worker")]
-pub use async_trait::async_trait;
-
-/// Worker-side activity context and activity scheduling options.
-#[cfg(feature = "worker")]
-pub use crate::activity::{ActivityContext, ActivityOptions};
-
-/// Worker-side workflow runtime context.
-#[cfg(feature = "worker")]
-pub use crate::workflow::{
-    TimerOptions, TimerResult, WorkflowContext, WorkflowSignalStream, WorkflowTimer,
-};
-
-/// Worker-side registration helpers.
-#[cfg(feature = "worker")]
-pub use crate::traits::{ActivityRegistration, WorkflowRegistration};
-
-/// Worker wrapper APIs.
-#[cfg(feature = "worker")]
-pub use crate::worker::{Worker, WorkerOptions};
-
-/// Worker-side Temporal SDK result/error aliases used in trait signatures.
-#[cfg(feature = "worker")]
-pub use temporalio_sdk::{ActivityError, WfExitValue, WorkflowResult};
-/// Worker-side Temporal SDK update context types used in typed workflow updates.
-#[cfg(feature = "worker")]
-pub use temporalio_sdk::{UpdateContext, UpdateInfo};
-
-/// Common supporting types for constructing [`crate::activity::ActivityOptions`].
-#[cfg(feature = "worker")]
-pub use temporalio_client::Priority;
-/// Common supporting types for constructing [`crate::activity::ActivityOptions`].
-#[cfg(feature = "worker")]
-pub use temporalio_common::protos::coresdk::workflow_commands::ActivityCancellationType;
-/// Common supporting types for constructing [`crate::activity::ActivityOptions`].
-#[cfg(feature = "worker")]
-pub use temporalio_common::protos::temporal::api::common::v1::RetryPolicy;
-
-/// Client-side typed wrapper APIs.
+pub use crate::activities::{ActivityContext, ActivityError};
 #[cfg(feature = "client")]
 pub use crate::client::{
-    Client, ConnectedClient, SignalWithStartWorkflowOptions, SignalWorkflowOptions,
-    StartWorkflowOptions, TypedWorkflowHandle, UpdateWorkflowOptions, WorkflowIdConflictPolicy,
-    WorkflowIdReusePolicy, WorkflowUpdateResult,
+    Client, ClientOptions, ConnectionOptions, WorkflowExecuteUpdateOptions,
+    WorkflowGetResultOptions, WorkflowHandle, WorkflowIdConflictPolicy, WorkflowIdReusePolicy,
+    WorkflowSignalOptions, WorkflowStartOptions,
 };
-
-/// Client-side Temporal workflow start/result options and result types.
 #[cfg(feature = "client")]
-pub use temporalio_client::{
-    ClientInitError, ClientOptions, GetWorkflowResultOptions, WorkflowExecutionResult,
-    WorkflowOptions,
+pub use crate::common::{
+    HasWorkflowDefinition, RetryPolicy, SignalDefinition, UpdateDefinition, WorkflowDefinition,
 };
-
-/// Client-side metrics type used by [`crate::client::Client::connect`].
-#[cfg(feature = "client")]
-pub use temporalio_common::telemetry::metrics::TemporalMeter;
+#[cfg(feature = "worker")]
+pub use crate::{
+    ActivityCancellationType, ActivityCloseTimeouts, ActivityOptions, ApplicationFailure, Runtime,
+    SyncWorkflowContext, TimerOptions, Worker, WorkerOptions, WorkflowCancellationToken,
+    WorkflowContext, WorkflowContextView, WorkflowResult, WorkflowTermination, activities, join,
+    join_all, select, workflow, workflow_methods,
+};

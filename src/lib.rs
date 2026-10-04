@@ -1,34 +1,27 @@
-//! Opinionated, type-safe building blocks for Temporal workflows and workers.
+//! Small, feature-gated Temporal SDK 1.0 integration.
 //!
-//! This crate provides:
-//! - Trait-based workflow/activity definitions (`[crate::traits::Workflow]`,
-//!   `[crate::traits::Activity]`).
-//! - Trait-based typed workflow updates (`[crate::traits::WorkflowUpdate]`).
-//! - Trait-based typed workflow signals (`[crate::traits::WorkflowSignal]`).
-//! - A typed workflow runtime context for invoking activities and receiving
-//!   workflow signals.
-//! - Durable workflow timers through `[crate::workflow::WorkflowContext]`.
-//! - A high-level worker abstraction for registration and execution.
-//! - A typed client wrapper for starting workflows, signaling workflows,
-//!   executing workflow updates, and decoding workflow results.
+//! Contracts and clients use the upstream definition traits and typed handles.
+//! Workers use the upstream runtime, registration, and workflow primitives.
 
-/// Activity context and activity execution options.
-#[cfg(feature = "worker")]
-pub mod activity;
-/// Type-safe Temporal client wrapper and typed workflow handles.
+/// Native typed client APIs and a connection helper.
 #[cfg(feature = "client")]
 pub mod client;
-/// Convenient re-exports for common imports.
+/// Native contract definitions and JSON conversion.
+#[cfg(feature = "client")]
+pub use temporalio_common as common;
+#[cfg(feature = "client")]
+pub use temporalio_common::{ActivityDefinition, data_converters};
+/// Native declarations for workflows and activities.
+#[cfg(feature = "worker")]
+pub use temporalio_macros::{activities, workflow, workflow_methods};
+/// Native worker APIs, including workflow contexts and registration.
+#[cfg(feature = "worker")]
+pub use temporalio_sdk::*;
+#[cfg(feature = "worker")]
+#[doc(hidden)]
+pub use temporalio_workflow::__private;
+/// Native workflow macros and deterministic concurrency helpers.
+#[cfg(feature = "worker")]
+pub use temporalio_workflow::{join, join_all, select};
+/// Convenient imports matching the enabled client and worker features.
 pub mod prelude;
-/// Core `Workflow` / `Activity` traits and worker registration adapters.
-pub mod traits;
-/// High-level worker connection and runtime lifecycle utilities.
-#[cfg(feature = "worker")]
-pub mod worker;
-/// Workflow execution context and typed activity invocation helpers.
-#[cfg(feature = "worker")]
-pub mod workflow;
-
-/// Re-export of the crate's high-level worker API.
-#[cfg(feature = "worker")]
-pub use worker::{Worker, WorkerOptions};

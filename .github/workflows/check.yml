@@ -1,0 +1,17 @@
+name: Check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo check --no-default-features
+      - run: cargo check --all-targets --features client
+      - run: cargo test --all-targets --features worker
+      - run: cargo clippy --all-targets --features worker -- -D warnings
+      - run: docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.8.2 server start-dev --ip 0.0.0.0 --headless
+      - run: cargo test --features worker --test worker -- --ignored
