@@ -14,4 +14,11 @@ jobs:
       - run: cargo test --all-targets --features worker
       - run: cargo clippy --all-targets --features worker -- -D warnings
       - run: docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.8.2 server start-dev --ip 0.0.0.0 --headless
+      - name: Wait for Temporal
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker exec temporal temporal operator cluster health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
       - run: cargo test --features worker --test worker -- --ignored
